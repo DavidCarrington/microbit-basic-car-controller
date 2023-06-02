@@ -1,52 +1,102 @@
-function stop () {
-    pins.analogWritePin(AnalogPin.P0, 0)
-    pins.analogWritePin(AnalogPin.P1, 0)
-    pins.digitalWritePin(DigitalPin.P2, 0)
-    pins.digitalWritePin(DigitalPin.P3, 0)
+/**
+ * Based on receiving a direction, we need to decide to turn.
+ * 
+ * The direction we turn also depends on whether we're going forwards of backwards
+ * 
+ * We need to handle 0 and 359... without making the car turn 360 degrees when it only needs to turn 1.
+ * 
+ * We should probably do rounding, to avoid the car wiggling around
+ */
+function sendDirection () {
+    radio.sendNumber(input.compassHeading())
 }
-input.onButtonPressed(Button.A, function () {
-    radio.sendString("forward")
+radio.onReceivedNumber(function (receivedNumber) {
+    serial.writeValue("controllerDirection", receivedNumber)
+    serial.writeValue("carDirection", input.compassHeading())
 })
-function drive (bForwards: boolean, iDuration: number, iSpeed: number) {
-    if (bForwards) {
-        pins.analogWritePin(AnalogPin.P0, iSpeed)
-        pins.analogWritePin(AnalogPin.P1, 0)
+function stop () {
+    pins.digitalWritePin(DigitalPin.P0, 0)
+    pins.digitalWritePin(DigitalPin.P1, 0)
+}
+function doControllerThings () {
+    if (input.buttonIsPressed(Button.A)) {
+        changeMode("controller")
+        controllerMoving = 1
+        radio.sendString("forward")
+        sendDirection()
+    } else if (input.buttonIsPressed(Button.B)) {
+        changeMode("controller")
+        controllerMoving = 1
+        radio.sendString("backward")
+        sendDirection()
+    } else if (mode == "controller") {
+        if (controllerMoving) {
+            controllerMoving = 0
+            radio.sendString("stop")
+        }
     } else {
-        pins.analogWritePin(AnalogPin.P1, iSpeed)
-        pins.analogWritePin(AnalogPin.P0, 0)
+    	
     }
-    basic.pause(iDuration)
-    stop()
 }
 radio.onReceivedString(function (receivedString) {
+    changeMode("car")
+    moveUntilTime = input.runningTime() + 110
     if (receivedString == "forward") {
-        drive(true, defaultMoveDurationMs, defaultSpeed)
+        carMoving = 1
     } else if (receivedString == "backward") {
-        drive(false, defaultMoveDurationMs, defaultSpeed)
-    } else if (receivedString == "left") {
-        doTurn(true, defaultMoveDurationMs, true, defaultSpeed)
+        carMoving = -1
     } else if (receivedString == "stop") {
+        moveUntilTime = 0
         stop()
+    } else {
+    	
+    }
+})
+function doCarThings () {
+    if (input.runningTime() < moveUntilTime) {
+        if (carMoving == 1) {
+            pins.digitalWritePin(DigitalPin.P0, 1)
+            pins.digitalWritePin(DigitalPin.P1, 0)
+        } else if (carMoving == -1) {
+            pins.digitalWritePin(DigitalPin.P0, 0)
+            pins.digitalWritePin(DigitalPin.P1, 1)
+        } else {
+            stop()
+        }
     } else {
         stop()
     }
-})
-input.onButtonPressed(Button.B, function () {
-    radio.sendString("backward")
-})
-function doTurn (bLeft: boolean, iDuration: number, bForwards: boolean, iSpeed: number) {
-    if (bLeft) {
-        pins.digitalWritePin(DigitalPin.P2, 1)
-        pins.digitalWritePin(DigitalPin.P3, 0)
-    } else {
-        pins.digitalWritePin(DigitalPin.P2, 0)
-        pins.digitalWritePin(DigitalPin.P3, 1)
-    }
-    drive(bForwards, iDuration, iSpeed)
 }
-let defaultSpeed = 0
-let defaultMoveDurationMs = 0
+function changeMode (sMode: string) {
+    if (mode != sMode) {
+        mode = sMode
+        if (mode == "controller") {
+            basic.showLeds(`
+                . . # . .
+                . . # . .
+                # # # # #
+                # . # . #
+                # # # # #
+                `)
+        } else if (mode == "") {
+            basic.showIcon(IconNames.Heart)
+        } else {
+            basic.clearScreen()
+        }
+    }
+}
+let mode = ""
+let moveUntilTime = 0
+let carMoving = 0
+let controllerMoving = 0
 radio.setGroup(1)
 radio.setTransmitPower(7)
-defaultMoveDurationMs = 1000
-defaultSpeed = 500
+controllerMoving = 0
+carMoving = 0
+moveUntilTime = 0
+loops.everyInterval(100, function () {
+    doControllerThings()
+    if (mode == "car") {
+        doCarThings()
+    }
+})
