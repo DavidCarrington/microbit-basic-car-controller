@@ -1,18 +1,14 @@
-/**
- * Based on receiving a direction, we need to decide to turn.
- * 
- * The direction we turn also depends on whether we're going forwards of backwards
- * 
- * We need to handle 0 and 359... without making the car turn 360 degrees when it only needs to turn 1.
- * 
- * We should probably do rounding, to avoid the car wiggling around
- */
 function sendDirection () {
     radio.sendNumber(input.compassHeading())
+}
+// JS modulo doesn't work like most other languages, so a custom version is required
+function modulo (a: number, n: number) {
+    return a - Math.floor(a / n) * n
 }
 radio.onReceivedNumber(function (receivedNumber) {
     serial.writeValue("controllerDirection", receivedNumber)
     serial.writeValue("carDirection", input.compassHeading())
+    serial.writeValue("steer", calculateRotationRequired(receivedNumber, input.compassHeading()))
 })
 function stop () {
     pins.digitalWritePin(DigitalPin.P0, 0)
@@ -78,12 +74,15 @@ function changeMode (sMode: string) {
                 # . # . #
                 # # # # #
                 `)
-        } else if (mode == "") {
+        } else if (mode == "ready") {
             basic.showIcon(IconNames.Heart)
         } else {
             basic.clearScreen()
         }
     }
+}
+function calculateRotationRequired (currentAngle: number, desiredAngle: number) {
+    return modulo(desiredAngle - currentAngle + 180, 360) - 180
 }
 let mode = ""
 let moveUntilTime = 0
@@ -94,6 +93,7 @@ radio.setTransmitPower(7)
 controllerMoving = 0
 carMoving = 0
 moveUntilTime = 0
+changeMode("ready")
 loops.everyInterval(100, function () {
     doControllerThings()
     if (mode == "car") {
