@@ -1,11 +1,11 @@
 function sendMovement () {
     radio.sendValue("steer", steer)
     radio.sendValue("speed", speed)
-    serial.writeValue("steer", steer)
-    serial.writeValue("speed", speed)
 }
 function doControllerThings () {
-    if (input.buttonIsPressed(Button.A) || input.buttonIsPressed(Button.B)) {
+    A = pins.digitalReadPin(DigitalPin.P0)
+    B = pins.digitalReadPin(DigitalPin.P2)
+    if (input.buttonIsPressed(Button.A) || input.buttonIsPressed(Button.B) || (A || B)) {
         changeMode("controller")
         detectAndSendControllerCommands()
     } else if (controllerMoving) {
@@ -57,20 +57,6 @@ radio.onReceivedValue(function (name, value) {
 function changeMode (sMode: string) {
     if (mode != sMode) {
         mode = sMode
-        if (mode == "controller") {
-            basic.showLeds(`
-                . . # . .
-                . . # . .
-                # # # # #
-                # . # . #
-                # # # # #
-                `)
-        } else if (mode == "ready") {
-            pins.analogWritePin(AnalogPin.P2, 0)
-            basic.showIcon(IconNames.Heart)
-        } else {
-            basic.clearScreen()
-        }
     }
 }
 function detectAndSendControllerCommands () {
@@ -85,17 +71,19 @@ function detectAndSendControllerCommands () {
     if (speed > maxSpeed) {
         speed = maxSpeed
     }
-    if (input.buttonIsPressed(Button.AB)) {
+    if (input.buttonIsPressed(Button.AB) || A && B) {
         steer = 0
-    } else if (input.buttonIsPressed(Button.A)) {
+    } else if (input.buttonIsPressed(Button.A) || A) {
         steer = 1
-    } else if (input.buttonIsPressed(Button.B)) {
+    } else if (input.buttonIsPressed(Button.B) || B) {
         steer = -1
     }
     sendMovement()
 }
 let pitch = 0
 let mode = ""
+let B = 0
+let A = 0
 let speed = 0
 let steer = 0
 let moveUntilTime = 0
