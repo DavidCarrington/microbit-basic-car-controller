@@ -1,68 +1,59 @@
-function sendDirection () {
-    radio.sendNumber(input.compassHeading())
-}
-// JS modulo doesn't work like most other languages, so a custom version is required
-function modulo (a: number, n: number) {
-    return a - Math.floor(a / n) * n
-}
-radio.onReceivedNumber(function (receivedNumber) {
-    serial.writeValue("controllerDirection", receivedNumber)
-    serial.writeValue("carDirection", input.compassHeading())
-    serial.writeValue("steer", calculateRotationRequired(receivedNumber, input.compassHeading()))
-})
-function stop () {
-    pins.digitalWritePin(DigitalPin.P0, 0)
-    pins.digitalWritePin(DigitalPin.P1, 0)
+function sendMovement () {
+    radio.sendValue("steer", steer)
+    radio.sendValue("speed", speed)
+    serial.writeValue("steer", steer)
+    serial.writeValue("speed", speed)
 }
 function doControllerThings () {
-    if (input.buttonIsPressed(Button.A)) {
+    if (input.buttonIsPressed(Button.A) || input.buttonIsPressed(Button.B)) {
         changeMode("controller")
-        controllerMoving = 1
-        radio.sendString("forward")
-        sendDirection()
-    } else if (input.buttonIsPressed(Button.B)) {
-        changeMode("controller")
-        controllerMoving = 1
-        radio.sendString("backward")
-        sendDirection()
-    } else if (mode == "controller") {
-        if (controllerMoving) {
-            controllerMoving = 0
-            radio.sendString("stop")
-        }
-    } else {
-    	
+        detectAndSendControllerCommands()
+    } else if (controllerMoving) {
+        controllerMoving = 0
+        speed = 0
+        steer = 0
+        sendMovement()
     }
 }
-radio.onReceivedString(function (receivedString) {
-    changeMode("car")
-    moveUntilTime = input.runningTime() + 110
-    if (receivedString == "forward") {
-        carMoving = 1
-    } else if (receivedString == "backward") {
-        carMoving = -1
-    } else if (receivedString == "stop") {
-        moveUntilTime = 0
-        stop()
-    } else {
-    	
-    }
-})
+function map (x: number, in_min: number, in_max: number, out_min: number, out_max: number) {
+    return Math.round((x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min)
+}
 function doCarThings () {
     if (input.runningTime() < moveUntilTime) {
-        if (carMoving == 1) {
-            pins.digitalWritePin(DigitalPin.P0, 1)
-            pins.digitalWritePin(DigitalPin.P1, 0)
-        } else if (carMoving == -1) {
+        if (steer == -1) {
             pins.digitalWritePin(DigitalPin.P0, 0)
             pins.digitalWritePin(DigitalPin.P1, 1)
+        } else if (steer == 1) {
+            pins.digitalWritePin(DigitalPin.P0, 1)
+            pins.digitalWritePin(DigitalPin.P1, 0)
         } else {
-            stop()
+            pins.digitalWritePin(DigitalPin.P0, 0)
+            pins.digitalWritePin(DigitalPin.P1, 0)
+        }
+        if (speed >= 0) {
+            pins.analogWritePin(AnalogPin.P2, speed)
+            pins.analogWritePin(AnalogPin.P16, 0)
+        } else if (speed < 0) {
+            pins.analogWritePin(AnalogPin.P2, 0)
+            pins.analogWritePin(AnalogPin.P16, Math.abs(speed))
         }
     } else {
-        stop()
+        pins.digitalWritePin(DigitalPin.P0, 0)
+        pins.digitalWritePin(DigitalPin.P1, 0)
+        pins.analogWritePin(AnalogPin.P2, 0)
+        pins.analogWritePin(AnalogPin.P16, 0)
     }
 }
+radio.onReceivedValue(function (name, value) {
+    changeMode("car")
+    moveUntilTime = input.runningTime() + 60
+    if (name == "speed") {
+        speed = value
+    } else if (name == "steer") {
+        steer = value
+    }
+    doCarThings()
+})
 function changeMode (sMode: string) {
     if (mode != sMode) {
         mode = sMode
@@ -75,26 +66,48 @@ function changeMode (sMode: string) {
                 # # # # #
                 `)
         } else if (mode == "ready") {
+            pins.analogWritePin(AnalogPin.P2, 0)
             basic.showIcon(IconNames.Heart)
         } else {
             basic.clearScreen()
         }
     }
 }
-function calculateRotationRequired (currentAngle: number, desiredAngle: number) {
-    return modulo(desiredAngle - currentAngle + 180, 360) - 180
+function detectAndSendControllerCommands () {
+    pitch = input.rotation(Rotation.Pitch)
+    if (pitch > 80 && pitch < 110) {
+        speed = 0
+    } else if (pitch < 80) {
+        speed = map(pitch, 80, 0, 200, maxSpeed)
+    } else if (pitch > 110) {
+        speed = -400
+    }
+    if (speed > maxSpeed) {
+        speed = maxSpeed
+    }
+    if (input.buttonIsPressed(Button.AB)) {
+        steer = 0
+    } else if (input.buttonIsPressed(Button.A)) {
+        steer = 1
+    } else if (input.buttonIsPressed(Button.B)) {
+        steer = -1
+    }
+    sendMovement()
 }
+let pitch = 0
 let mode = ""
+let speed = 0
+let steer = 0
 let moveUntilTime = 0
-let carMoving = 0
 let controllerMoving = 0
+let maxSpeed = 0
+maxSpeed = 1023
 radio.setGroup(1)
 radio.setTransmitPower(7)
 controllerMoving = 0
-carMoving = 0
 moveUntilTime = 0
 changeMode("ready")
-loops.everyInterval(100, function () {
+loops.everyInterval(50, function () {
     doControllerThings()
     if (mode == "car") {
         doCarThings()
